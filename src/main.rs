@@ -1,71 +1,60 @@
 use chrono::{Datelike, Duration, Local, Weekday};
-use log::{info, warn};
 use reqwest::Error;
 use scraper::{Html, Selector};
 use serde_json::json;
 use tokio;
 
-struct Range{
-    high:f64,
-    low:f64
+struct Range {
+    high: f64,
+    low: f64,
 }
 
-impl Range{
+impl Range {
     const STRIKE_OFFSET: f64 = 50.0;
     const STRIKE_ROUND: f64 = 100.0;
     const NIFTY_EXPIRY: Weekday = Weekday::Thu;
 
-    fn new(high:f64,low:f64) -> Self{
-        Self{
-            high,
-            low
-        }
+    fn new(high: f64, low: f64) -> Self {
+        Self { high, low }
     }
-
 
     fn strike(&self, ce: bool) -> f64 {
         let offset = if ce {
-            self.high-Self::STRIKE_OFFSET
+            self.high - Self::STRIKE_OFFSET
         } else {
-            self.low+Self::STRIKE_OFFSET
+            self.low + Self::STRIKE_OFFSET
         };
-        
-        (offset/Self::STRIKE_ROUND).round()*Self::STRIKE_ROUND
+        (offset / Self::STRIKE_ROUND).round() * Self::STRIKE_ROUND
     }
 
-    
-
-
-    fn expiry_day(&self) -> String{
-
+    fn expiry_day(&self) -> String {
         let mut expiry_day = Local::now();
-        while expiry_day.weekday() != Self::NIFTY_EXPIRY{
+        while expiry_day.weekday() != Self::NIFTY_EXPIRY {
             expiry_day += Duration::days(1);
-
         }
         expiry_day.format("_%d%b%Y_").to_string().to_uppercase()
     }
 
-    fn instrument(&self, ce: bool) -> (String,String) {
+    fn instrument(&self, ce: bool) -> (String, String) {
         let strike_price = self.strike(ce).to_string();
         let encode = if ce {
-            format!("CE_{}",strike_price)
+            format!("CE_{}", strike_price)
         } else {
-            format!("PE_{}",strike_price)
+            format!("PE_{}", strike_price)
         };
-        
-        (format!("OPTIDX_NIFTY{}{}",self.expiry_day(),encode).to_string(),strike_price)
+        (
+            format!("OPTIDX_NIFTY{}{}", self.expiry_day(), encode),
+            strike_price,
+        )
     }
-
 }
-
 
 async fn fetch_html(url: &str) -> Option<String> {
     let response = reqwest::get(url).await.ok()?;
     if response.status().is_success() {
         Some(response.text().await.ok()?)
     } else {
-        warn!("Failed to fetch URL: {}", url);
+        println!("Failed to fetch URL: {}", url);
         None
     }
 }
@@ -75,7 +64,6 @@ async fn scrape_nifty_price_range() -> Option<Vec<String>> {
     let html = fetch_html(url).await?;
     let document = Html::parse_document(&html);
     let selector = Selector::parse("div.P6K39c").ok()?;
-    println!("{:?}",selector);
     let mut price_divs = document.select(&selector);
 
     // Assuming the price range is in the second matching div
@@ -101,8 +89,8 @@ async fn push_payload(instr_key: &str, key_value: &str) -> Result<(), Error> {
     });
 
     let client = reqwest::Client::new();
-    
-    let response = client
+
+    let _response = client
         .post("https://api.tradetron.tech/api?")
         .json(&payload)
         .send()
@@ -116,10 +104,10 @@ async fn process_nifty_range() -> Result<(String, String, String, String), Box<d
         if range.len() == 2 {
             if let (Ok(high), Ok(low)) = (range[0].parse::<f64>(), range[1].parse::<f64>()) {
                 let range_instance = Range::new(high, low);
-                
+
                 let (ce_instru, ce_strike) = range_instance.instrument(true);
                 let (pe_instru, pe_strike) = range_instance.instrument(false);
-                
+
                 push_payload("ce_strike", &ce_strike).await?;
                 push_payload("pe_strike", &pe_strike).await?;
                 push_payload("ce_instru", &ce_instru).await?;
@@ -132,20 +120,17 @@ async fn process_nifty_range() -> Result<(String, String, String, String), Box<d
     Err("Failed to process NIFTY range.".into())
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
-
-    env_logger::init();
     match process_nifty_range().await {
-        Ok((ce_strike, pe_strike, pe_instru, ce_instru)) => {
-            info!("Call Strike: {}", ce_strike);
-            info!("Put Strike: {}", pe_strike);
-            info!("Put Instrument: {}", pe_instru);
-            info!("Put Instrument: {}", ce_instru);
-
+        Ok((ce_strike, pe_strike, ce_instru, pe_instru)) => {
+            println!("Call Strike: {}", ce_strike);
+            println!("Put Strike: {}", pe_strike);
+            println!("Call Instrument: {}", ce_instru);
+            println!("Put Instrument: {}", pe_instru);
         }
         Err(e) => {
-            warn!("Error processing NIFTY range: {}", e);
+            println!("Error processing NIFTY range: {}", e);
         }
     }
 }
