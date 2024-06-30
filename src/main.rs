@@ -112,6 +112,9 @@ async fn process_nifty_range() -> Result<(String, String, String, String), Box<d
                 push_payload("pe_strike", &pe_strike).await?;
                 push_payload("ce_instru", &ce_instru).await?;
                 push_payload("pe_instru", &pe_instru).await?;
+                push_payload("build_up", "0").await?;
+
+
 
                 return Ok((ce_strike, pe_strike, ce_instru, pe_instru));
             }
