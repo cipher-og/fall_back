@@ -1,0 +1,1 @@
+Selector { selectors: SelectorList([Selector(div.P6K39c, specificity = 0x401, flags = SelectorFlags(0x0))]) }
