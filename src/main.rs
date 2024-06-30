@@ -1,7 +1,10 @@
 use chrono::{Datelike, Duration, Local, Weekday};
+use log::{info, warn};
 use reqwest::Error;
 use scraper::{Html, Selector};
 use serde_json::json;
+use simplelog::*;
+use std::fs::File;
 use tokio;
 
 struct Range {
@@ -54,7 +57,7 @@ async fn fetch_html(url: &str) -> Option<String> {
     if response.status().is_success() {
         Some(response.text().await.ok()?)
     } else {
-        println!("Failed to fetch URL: {}", url);
+        warn!("Failed to fetch URL: {}", url);
         None
     }
 }
@@ -90,11 +93,13 @@ async fn push_payload(instr_key: &str, key_value: &str) -> Result<(), Error> {
 
     let client = reqwest::Client::new();
 
-    let _response = client
+    let response = client
         .post("https://api.tradetron.tech/api?")
         .json(&payload)
         .send()
         .await?;
+
+    info!("Push payload response: {:?}", response);
 
     Ok(())
 }
@@ -112,9 +117,6 @@ async fn process_nifty_range() -> Result<(String, String, String, String), Box<d
                 push_payload("pe_strike", &pe_strike).await?;
                 push_payload("ce_instru", &ce_instru).await?;
                 push_payload("pe_instru", &pe_instru).await?;
-                push_payload("build_up", "0").await?;
-
-
 
                 return Ok((ce_strike, pe_strike, ce_instru, pe_instru));
             }
@@ -125,15 +127,24 @@ async fn process_nifty_range() -> Result<(String, String, String, String), Box<d
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    CombinedLogger::init(vec![
+        TermLogger::new(LevelFilter::Info, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
+        WriteLogger::new(
+            LevelFilter::Info,
+            Config::default(),
+            File::create("app.log").unwrap(),
+        ),
+    ]).unwrap();
+
     match process_nifty_range().await {
         Ok((ce_strike, pe_strike, ce_instru, pe_instru)) => {
-            println!("Call Strike: {}", ce_strike);
-            println!("Put Strike: {}", pe_strike);
-            println!("Call Instrument: {}", ce_instru);
-            println!("Put Instrument: {}", pe_instru);
+            info!("Call Strike: {}", ce_strike);
+            info!("Put Strike: {}", pe_strike);
+            info!("Call Instrument: {}", ce_instru);
+            info!("Put Instrument: {}", pe_instru);
         }
         Err(e) => {
-            println!("Error processing NIFTY range: {}", e);
+            warn!("Error processing NIFTY range: {}", e);
         }
     }
 }
